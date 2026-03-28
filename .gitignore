@@ -1,3 +1,6 @@
+# macOS resource forks (external volumes)
+._*
+
 # Dependencies
 node_modules/
 .npm-cache/
