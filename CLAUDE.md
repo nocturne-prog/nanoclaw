@@ -17,6 +17,8 @@ If you are a fresh install (you ran `git clone`, not `git pull`) and there are n
 
 Personal Claude assistant. See [README.md](README.md) for philosophy and setup. Architecture lives in `docs/`.
 
+> ⚠️ **NanoClaw가 실행 중인 라이브 인스톨입니다.** 호스트 `node dist/index.js`, `buildkit` 컨테이너, `:3000`/`:3001` 포트, launchd `com.nanoclaw` — 함부로 종료/재시작 금지. 정확한 인벤토리와 안전 규칙은 [docs/RUNNING-PROCESSES.md](docs/RUNNING-PROCESSES.md) 참조.
+
 ## Quick Context
 
 The host is a single Node process that orchestrates per-session agent containers. Platform messages land via channel adapters, route through an entity model (users → messaging groups → agent groups → sessions), get written into the session's inbound DB, and wake a container. The agent-runner inside the container polls the DB, calls Claude, and writes back to the outbound DB. The host polls the outbound DB and delivers through the same adapter.
