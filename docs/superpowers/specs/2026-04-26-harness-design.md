@@ -167,7 +167,7 @@ Sections (~150 lines total):
 10. NanoClaw-specific gotchas: pnpm not npm, Apple Container not Docker (no `docker` commands), native credential proxy (not OneCLI), no editing `dist/`, migration triggers a service restart, container changes need rebuild
 11. Filesystem memory practices: store new facts in this file or topic files, reference all topic files from this `CLAUDE.local.md`, split files >500 lines
 
-The full Markdown body is the one presented in the brainstorming session — it gets written verbatim by the implementer or `personalize.ts`.
+The canonical body lives at `scripts/personalize/CLAUDE.local.md` once Stage 5 is implemented; the implementation plan writes the file there first, then either `personalize.ts` copies it or the implementer copies it directly during Stage 2.
 
 ## Stage 3 — Container hooks + dependencies
 
@@ -181,7 +181,7 @@ Existing `env` block is preserved. A `hooks` block is merged in:
 - **PostToolUse on .ts/.tsx/.js/.jsx edit** — grep for `console.log(` and warn (≤3 lines).
 - **Stop hook** — recursive grep for `console.log(` under `/workspace/agent`, list up to 3 files.
 
-The full JSON is the one presented in the brainstorming session.
+The canonical hooks JSON lives at `scripts/personalize/hooks.json` once Stage 5 is implemented; the merge logic preserves the existing `env` block.
 
 ### 3b. `groups/dm-with-jihoon/container.json` `packages.npm`
 
@@ -220,8 +220,8 @@ pnpm exec tsx scripts/personalize.ts [--folder <agent-group-folder>] [--reset]
 
 Behavior:
 
-1. Resolve agent group folder (default `dm-with-jihoon`). Discover the agent group ID by reading `data/v2.db` (`SELECT id FROM agent_groups WHERE folder = ?`).
-2. Read the bundled `CLAUDE.local.md` template (kept in `scripts/personalize/CLAUDE.local.md`) and write it to `groups/<folder>/CLAUDE.local.md`. If the existing file differs, prompt before overwriting (or `--force`).
+1. Resolve agent group folder (default `dm-with-jihoon`). Discover the agent group ID by reading `data/v2.db` (`SELECT id FROM agent_groups WHERE folder = ?`). If the row doesn't exist yet (fresh install before `/init-first-agent`), skip Stages 3a (cannot locate `.claude-shared`) but still apply Stages 2, 3b, 4 — print a notice asking the user to run `/init-first-agent` first, then re-run the script.
+2. Read the bundled `CLAUDE.local.md` template (kept in `scripts/personalize/CLAUDE.local.md`) and write it to `groups/<folder>/CLAUDE.local.md`. Default behavior when an existing file differs: skip with a warning (non-interactive safe). `--force` overwrites unconditionally.
 3. Read `data/v2-sessions/<id>/.claude-shared/settings.json`. Merge in the `hooks` block from a bundled template (`scripts/personalize/hooks.json`). Preserve any existing `env` keys.
 4. Read `groups/<folder>/container.json`. Ensure `packages.npm` contains `prettier@3` and `typescript@5` (deduplicated). Write back if changed.
 5. For each of the 4 core skill names, copy `~/.claude/skills/<name>/` → `container/skills/<name>/` if the destination is missing.
@@ -293,7 +293,7 @@ The harness adds **zero source-code edits**, so the additional cost over a vanil
 4. Stage 3b (container.json packages.npm)     → spawn container, verify per-group image build
 5. Stage 4 (4 skill directories)              → verify symlinks, ls /home/node/.claude/skills → commit
 6. Stage 5 (scripts/personalize.ts)           → dry-run --reset on a scratch group → commit
-7. This design doc                            → commit
+7. This design doc                            → committed (c4ba0df)
 ```
 
 Each stage committed separately; failure in one rolls back without touching the others.
