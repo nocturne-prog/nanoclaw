@@ -93,9 +93,7 @@ describe('ensureContainerRuntimeRunning', () => {
       throw new Error('runtime unreachable');
     });
 
-    expect(() => ensureContainerRuntimeRunning()).toThrow(
-      'Container runtime is required but failed to start',
-    );
+    expect(() => ensureContainerRuntimeRunning()).toThrow('Container runtime is required but failed to start');
     expect(log.error).toHaveBeenCalled();
   });
 });
@@ -120,10 +118,7 @@ describe('cleanupOrphans', () => {
 
     cleanupOrphans();
 
-    expect(mockExecSync).toHaveBeenCalledWith(
-      `${CONTAINER_RUNTIME_BIN} ls --format json`,
-      expect.any(Object),
-    );
+    expect(mockExecSync).toHaveBeenCalledWith(`${CONTAINER_RUNTIME_BIN} ls --format json`, expect.any(Object));
   });
 
   it('stops orphaned nanoclaw containers matching this install', () => {
