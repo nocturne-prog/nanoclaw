@@ -114,7 +114,7 @@ RUN mkdir -p /workspace/group /workspace/extra && \
     chmod 777 /home/node
 
 USER node
-WORKDIR /workspace/group
+WORKDIR /workspace
 
 # tini is PID 1, reaps zombies, forwards signals cleanly. entrypoint.sh does
 # `exec bun ...` so bun runs as tini's direct child.

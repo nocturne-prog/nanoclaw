@@ -6,11 +6,12 @@
  */
 import path from 'path';
 
-import { DATA_DIR } from './config.js';
+import { CREDENTIAL_PROXY_PORT, DATA_DIR } from './config.js';
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
 import { ensureContainerRuntimeRunning, cleanupOrphans } from './container-runtime.js';
+import { startCredentialProxy } from './credential-proxy.js';
 import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
@@ -70,6 +71,17 @@ async function main(): Promise<void> {
   // 2. Container runtime
   ensureContainerRuntimeRunning();
   cleanupOrphans();
+
+  // 2b. Credential proxy — containers route their Anthropic API calls
+  // through this so secrets in .env never reach the container.
+  // Apple Container note: bridge interface only exists while a container
+  // runs, so bind to all interfaces. CREDENTIAL_PROXY_HOST overrides for
+  // tighter binding when the bridge IP is reliably present.
+  const proxyHost = process.env.CREDENTIAL_PROXY_HOST || '0.0.0.0';
+  const proxyServer = await startCredentialProxy(CREDENTIAL_PROXY_PORT, proxyHost);
+  onShutdown(() => {
+    proxyServer.close();
+  });
 
   // 3. Channel adapters
   await initChannelAdapters((adapter: ChannelAdapter): ChannelSetup => {
