@@ -9,6 +9,7 @@ import path from 'path';
 import {
   CONTAINER_IMAGE,
   CONTAINER_MAX_OUTPUT_SIZE,
+  CONTAINER_MEMORY_MB,
   CONTAINER_TIMEOUT,
   CREDENTIAL_PROXY_PORT,
   DATA_DIR,
@@ -77,16 +78,9 @@ function buildVolumeMounts(
       readonly: true,
     });
 
-    // Shadow .env so the agent cannot read secrets from the mounted project root.
-    // Credentials are injected by the credential proxy, never exposed to containers.
-    const envFile = path.join(projectRoot, '.env');
-    if (fs.existsSync(envFile)) {
-      mounts.push({
-        hostPath: '/dev/null',
-        containerPath: '/workspace/project/.env',
-        readonly: true,
-      });
-    }
+    // .env shadowing: Apple Container doesn't support file mounts (only directories),
+    // so .env is shadowed inside the container via mount --bind in entrypoint.sh.
+    // Main containers start as root to allow this, then drop privileges via setpriv.
 
     // Main also gets its group folder as the working directory
     mounts.push({
@@ -226,8 +220,12 @@ function buildContainerArgs(
   mounts: VolumeMount[],
   containerName: string,
   isMain: boolean,
+  memoryMb: number,
 ): string[] {
   const args: string[] = ['run', '-i', '--rm', '--name', containerName];
+
+  // Limit container memory to avoid over-reserving host RAM
+  args.push('--memory', `${memoryMb}m`);
 
   // Pass host timezone so container's local time matches the user's
   args.push('-e', `TZ=${TIMEZONE}`);
@@ -260,9 +258,11 @@ function buildContainerArgs(
   if (hostUid != null && hostUid !== 0 && hostUid !== 1000) {
     if (isMain) {
       // Main containers start as root so the entrypoint can mount --bind
-      // to shadow .env. Privileges are dropped via setpriv in entrypoint.sh.
-      args.push('-e', `RUN_UID=${hostUid}`);
-      args.push('-e', `RUN_GID=${hostGid}`);
+      // to shadow .env, then drop to the container's node user (1000).
+      // Claude Code SDK refuses to run as root (exit code 1).
+      // VirtioFS on Apple Container doesn't enforce ExFAT permissions,
+      // so uid 1000 can still access ExFAT-mounted files.
+      args.push('-e', 'RUN_UID=1000', '-e', 'RUN_GID=1000');
     } else {
       args.push('--user', `${hostUid}:${hostGid}`);
     }
@@ -296,7 +296,8 @@ export async function runContainerAgent(
   const mounts = buildVolumeMounts(group, input.isMain);
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
-  const containerArgs = buildContainerArgs(mounts, containerName, input.isMain);
+  const memoryMb = group.containerConfig?.memoryMb || CONTAINER_MEMORY_MB;
+  const containerArgs = buildContainerArgs(mounts, containerName, input.isMain, memoryMb);
 
   logger.debug(
     {
