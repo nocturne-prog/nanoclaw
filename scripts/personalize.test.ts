@@ -161,4 +161,43 @@ describe('personalize', () => {
     expect(fs.existsSync(path.join(env.projectRoot, 'container/skills/tdd-workflow'))).toBe(false);
     expect(fs.existsSync(path.join(env.projectRoot, 'container/skills/security-review'))).toBe(false);
   });
+
+  it('skips CLAUDE.local.md when template is missing (does not throw)', () => {
+    fs.unlinkSync(path.join(env.projectRoot, 'scripts/personalize/CLAUDE.local.md'));
+
+    expect(() =>
+      personalize({ projectRoot: env.projectRoot, homeDir: env.homeDir, folder: 'dm-with-jihoon' }),
+    ).not.toThrow();
+
+    // packages and skills should still be applied
+    const cfg = JSON.parse(
+      fs.readFileSync(path.join(env.projectRoot, 'groups/dm-with-jihoon/container.json'), 'utf-8'),
+    );
+    expect(cfg.packages.npm).toEqual(expect.arrayContaining(['prettier@3', 'typescript@5']));
+  });
+
+  it('skips hooks when hooks template is missing (does not throw)', () => {
+    fs.unlinkSync(path.join(env.projectRoot, 'scripts/personalize/hooks.json'));
+
+    expect(() =>
+      personalize({ projectRoot: env.projectRoot, homeDir: env.homeDir, folder: 'dm-with-jihoon' }),
+    ).not.toThrow();
+
+    const settings = JSON.parse(
+      fs.readFileSync(
+        path.join(env.projectRoot, 'data/v2-sessions', env.agentGroupId, '.claude-shared/settings.json'),
+        'utf-8',
+      ),
+    );
+    expect(settings.hooks).toBeUndefined();
+    expect(settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe('0');
+  });
+
+  it('reset is idempotent (running twice does not throw)', () => {
+    personalize({ projectRoot: env.projectRoot, homeDir: env.homeDir, folder: 'dm-with-jihoon' });
+    resetHarness({ projectRoot: env.projectRoot, homeDir: env.homeDir, folder: 'dm-with-jihoon' });
+    expect(() =>
+      resetHarness({ projectRoot: env.projectRoot, homeDir: env.homeDir, folder: 'dm-with-jihoon' }),
+    ).not.toThrow();
+  });
 });

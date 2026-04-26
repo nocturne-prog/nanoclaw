@@ -8,6 +8,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import Database from 'better-sqlite3';
 
 interface PersonalizeOptions {
@@ -89,6 +90,10 @@ export function resetHarness(opts: PersonalizeOptions = {}): void {
 
 function applyClaudeLocalMd(projectRoot: string, folder: string, force: boolean): void {
   const tmpl = path.join(projectRoot, 'scripts/personalize/CLAUDE.local.md');
+  if (!fs.existsSync(tmpl)) {
+    console.warn(`[personalize] template not found: ${tmpl} — skipping CLAUDE.local.md`);
+    return;
+  }
   const dst = path.join(projectRoot, 'groups', folder, 'CLAUDE.local.md');
   const tmplBody = fs.readFileSync(tmpl, 'utf-8');
 
@@ -138,6 +143,10 @@ function applyContainerPackages(projectRoot: string, folder: string): void {
 
 function applyHooks(projectRoot: string, agentGroupId: string): void {
   const tmpl = path.join(projectRoot, 'scripts/personalize/hooks.json');
+  if (!fs.existsSync(tmpl)) {
+    console.warn(`[personalize] template not found: ${tmpl} — skipping hooks merge`);
+    return;
+  }
   const dst = path.join(
     projectRoot,
     'data/v2-sessions',
@@ -175,9 +184,18 @@ function parseArgs(argv: string[]): { folder?: string; force?: boolean; reset?: 
   const out: { folder?: string; force?: boolean; reset?: boolean } = {};
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--folder') out.folder = argv[++i];
-    else if (a === '--force') out.force = true;
-    else if (a === '--reset') out.reset = true;
+    if (a === '--folder') {
+      const next = argv[i + 1];
+      if (!next || next.startsWith('--')) {
+        console.error('[personalize] --folder requires a value (e.g. --folder dm-with-jihoon)');
+        process.exit(1);
+      }
+      out.folder = argv[++i];
+    } else if (a === '--force') {
+      out.force = true;
+    } else if (a === '--reset') {
+      out.reset = true;
+    }
   }
   return out;
 }
@@ -192,7 +210,10 @@ function printNextSteps(): void {
 // Entrypoint — only runs when invoked directly, not on import.
 const isMain = (() => {
   try {
-    return import.meta.url === `file://${process.argv[1]}`;
+    if (!process.argv[1]) return false;
+    const thisFile = fileURLToPath(import.meta.url);
+    const calledFile = path.resolve(process.argv[1]);
+    return thisFile === calledFile;
   } catch {
     return false;
   }
