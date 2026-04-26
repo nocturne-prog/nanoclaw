@@ -1,5 +1,73 @@
 {
-  "sandbox": {
-    "enabled": false
+  "sandbox": { "enabled": false },
+  "permissions": {
+    "allow": [
+      "Bash(pnpm install*)",
+      "Bash(pnpm run build*)",
+      "Bash(pnpm exec vitest*)",
+      "Bash(pnpm exec tsc*)",
+      "Bash(container list*)",
+      "Bash(container ls*)",
+      "Bash(container logs*)",
+      "Bash(container stop*)",
+      "Bash(container exec*)",
+      "Bash(launchctl list*)",
+      "Bash(launchctl kickstart*)",
+      "Bash(launchctl load*)",
+      "Bash(launchctl unload*)",
+      "Bash(tail -*)",
+      "Bash(sqlite3 *:*)",
+      "Bash(git status*)",
+      "Bash(git log*)",
+      "Bash(git diff*)",
+      "Bash(git show*)",
+      "Bash(./container/build.sh*)",
+      "Bash(jq *)",
+      "Bash(grep *)",
+      "Bash(rg *)",
+      "Bash(find *)",
+      "Bash(ls *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"dist/.*\"",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '[NanoClaw] dist/ is build output — edit src/ instead, then run pnpm run build' >&2; exit 1"
+        }]
+      },
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"sqlite3.*data/v2\\\\.db.*(INSERT|UPDATE|DELETE|DROP|ALTER)\"",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '[NanoClaw] Direct write to v2.db detected — prefer running through host code or a migration. Continue?' >&2"
+        }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "tool == \"Bash\" && tool_input.command matches \"^pnpm install\"",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '[NanoClaw] Reminder: run `pnpm run build` after install' >&2"
+        }]
+      },
+      {
+        "matcher": "tool == \"Edit\" && tool_input.file_path matches \"container/.*\"",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '[NanoClaw] container/ changed — rebuild image with `./container/build.sh`' >&2"
+        }]
+      },
+      {
+        "matcher": "tool == \"Write\" && tool_input.file_path matches \"src/db/migrations/.*\"",
+        "hooks": [{
+          "type": "command",
+          "command": "echo '[NanoClaw] New migration — restart service to apply: launchctl kickstart -k gui/$(id -u)/com.nanoclaw' >&2"
+        }]
+      }
+    ]
   }
 }
