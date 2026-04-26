@@ -297,7 +297,12 @@ export async function runContainerAgent(
   const safeName = group.folder.replace(/[^a-zA-Z0-9-]/g, '-');
   const containerName = `nanoclaw-${safeName}-${Date.now()}`;
   const memoryMb = group.containerConfig?.memoryMb || CONTAINER_MEMORY_MB;
-  const containerArgs = buildContainerArgs(mounts, containerName, input.isMain, memoryMb);
+  const containerArgs = buildContainerArgs(
+    mounts,
+    containerName,
+    input.isMain,
+    memoryMb,
+  );
 
   logger.debug(
     {
