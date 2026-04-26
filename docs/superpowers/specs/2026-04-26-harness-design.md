@@ -6,7 +6,7 @@
 - **Decision summary:**
   - Mirror Jihoon's global Claude Code rules into the container agent (option 1).
   - Non-interactive hooks only inside the container (option B).
-  - Add 4 core skills to the shared container skills directory (option X).
+  - Add 2 text-only core skills (`tdd-workflow`, `security-review`) to the shared container skills directory (option X' — narrowed from X after discovering `browse`/`qa` depend on host-side helpers and would duplicate the existing `agent-browser` skill).
   - Project-local host harness: minimal permissions allowlist + a few NanoClaw-specific guard hooks (option Q).
   - Sequential rollout: host → container CLAUDE.local.md → container hooks → container skills (approach 2).
 
@@ -32,7 +32,7 @@ Harness changes touch only the following surfaces. Source code (`src/**`) and Do
 | 2. Container behavior rules | `groups/dm-with-jihoon/CLAUDE.local.md` | no (gitignored) | **none** (runtime data) |
 | 3a. Container hooks | `data/v2-sessions/<id>/.claude-shared/settings.json` | no (gitignored) | **none** (runtime data) |
 | 3b. Container deps (prettier, tsc) | `groups/dm-with-jihoon/container.json` `packages.npm` | no (gitignored) | **none** (config, not source) |
-| 4. Container skills | `container/skills/{tdd-workflow,security-review,browse,qa}/` | yes (new directories) | low (new dir names; upstream is unlikely to ship the same names) |
+| 4. Container skills | `container/skills/{tdd-workflow,security-review}/` | yes (new directories) | low (new dir names; upstream is unlikely to ship the same names) |
 
 Total source-code edits: **0**. Total Dockerfile edits: **0**.
 
@@ -46,10 +46,8 @@ A separate `scripts/personalize.ts` (also new) re-applies stages 2, 3a, 3b, 4 id
 │ ├── scripts/personalize.ts   [Stage 5: replay script]                  │
 │ ├── docs/superpowers/specs/2026-04-26-harness-design.md  (this doc)    │
 │ └── container/skills/                                                  │
-│     ├── tdd-workflow/  ← Stage 4 (new, copied from ~/.claude/skills)   │
-│     ├── security-review/                                               │
-│     ├── browse/                                                        │
-│     └── qa/                                                            │
+│     ├── tdd-workflow/      ← Stage 4 (new, copied from ~/.claude/skills)│
+│     └── security-review/                                               │
 └────────────────────────────────────────────────────────────────────────┘
                                 │
                   spawned at runtime by container-runner.ts
@@ -62,9 +60,7 @@ A separate `scripts/personalize.ts` (also new) re-applies stages 2, 3a, 3b, 4 id
 │ ├── settings.json     [Stage 3a: hooks merged in, env preserved]       │
 │ └── skills/                                                            │
 │     ├── tdd-workflow → /app/skills/tdd-workflow                        │
-│     ├── security-review → /app/skills/security-review                  │
-│     ├── browse → /app/skills/browse                                    │
-│     └── qa → /app/skills/qa                                            │
+│     └── security-review → /app/skills/security-review                  │
 │ /app/skills (= host container/skills, RO bind, runtime mount)          │
 └────────────────────────────────────────────────────────────────────────┘
 ```
@@ -198,16 +194,19 @@ The canonical hooks JSON lives at `scripts/personalize/hooks.json` once Stage 5 
 
 ## Stage 4 — Container skills
 
-Copy 4 directories from `~/.claude/skills/` into `container/skills/`:
+Copy 2 directories from `~/.claude/skills/` into `container/skills/`:
 
-- `tdd-workflow/` — guides the TDD workflow when implementing features
-- `security-review/` — security checklist for auth/secrets/API/payment work
-- `browse/` — headless browser for QA + research
-- `qa/` — systematic web app QA testing (depends on browse; setup-browser-cookies is intentionally not copied because host-OS cookie access doesn't apply inside a container — auth-page QA is therefore limited)
+- `tdd-workflow/` — guides the TDD workflow when implementing features (text-only, ~12 KB)
+- `security-review/` — security checklist for auth/secrets/API/payment work (text-only, ~16 KB)
 
 `container/skills/` is bind-mounted RO at `/app/skills` by `container-runner.ts:305-311`. v2 `syncSkillSymlinks()` then symlinks each into `.claude-shared/skills/` based on `container.json`'s `skills: 'all' | string[]` (default `'all'`). No Dockerfile edit, no image rebuild.
 
-The four skills are copied verbatim from the host's `~/.claude/skills/<name>/`. Helper scripts inside those skill directories come along automatically.
+`browse` and `qa` were considered (option X) but dropped because:
+- `browse` depends on `~/.claude/skills/gstack/bin/` host-side helpers and ships its own server/Playwright stack — won't run inside the container as-is, and v2 already provides headless-browser capability via the existing `agent-browser` skill.
+- `qa` depends on `browse`; without browse it's not useful.
+- Host-OS cookie access (which `setup-browser-cookies` requires) doesn't apply inside a container.
+
+The two retained skills are copied verbatim — both are text-only Markdown guides with no helper scripts, so the copy is trivial and they integrate cleanly with the agent's existing toolset.
 
 ## Stage 5 — `scripts/personalize.ts` (idempotent replay)
 
@@ -224,10 +223,10 @@ Behavior:
 2. Read the bundled `CLAUDE.local.md` template (kept in `scripts/personalize/CLAUDE.local.md`) and write it to `groups/<folder>/CLAUDE.local.md`. Default behavior when an existing file differs: skip with a warning (non-interactive safe). `--force` overwrites unconditionally.
 3. Read `data/v2-sessions/<id>/.claude-shared/settings.json`. Merge in the `hooks` block from a bundled template (`scripts/personalize/hooks.json`). Preserve any existing `env` keys.
 4. Read `groups/<folder>/container.json`. Ensure `packages.npm` contains `prettier@3` and `typescript@5` (deduplicated). Write back if changed.
-5. For each of the 4 core skill names, copy `~/.claude/skills/<name>/` → `container/skills/<name>/` if the destination is missing.
+5. For each of the 2 core skill names (`tdd-workflow`, `security-review`), copy `~/.claude/skills/<name>/` → `container/skills/<name>/` if the destination is missing.
 6. Print a "next steps" block: `./container/build.sh && launchctl kickstart -k gui/$(id -u)/com.nanoclaw`.
 
-`--reset` removes the harness from all five places (revert `CLAUDE.local.md`, drop the `hooks` block, drop the two npm packages, delete the four skill dirs). Useful for clean retries.
+`--reset` removes the harness from all five places (revert `CLAUDE.local.md`, drop the `hooks` block, drop the two npm packages, delete the two skill dirs). Useful for clean retries.
 
 The script is plain `tsx` — no NanoClaw runtime imports, so it can run on any fresh checkout.
 
@@ -239,7 +238,7 @@ Per-stage acceptance criteria:
 - **Stage 2:** After service restart, sending "지금 시간 알려줘" via Telegram returns Korean. Asking for a sample function returns immutable code (spread, no mutation).
 - **Stage 3a:** Asking the agent to create a `.ts` file with `console.log` triggers `[prettier]` and `[Warning] console.log` lines in the container log. Asking for a freestanding random `.md` file is blocked.
 - **Stage 3b:** First spawn after the packages.npm change builds a per-group image. `container exec <id> which prettier` finds it.
-- **Stage 4:** `container exec <id> ls /home/node/.claude/skills/` lists the 4 new skill names. Asking for a TDD-style implementation invokes `tdd-workflow`.
+- **Stage 4:** `container exec <id> ls /home/node/.claude/skills/` lists `tdd-workflow` and `security-review` symlinks. Asking for a TDD-style implementation invokes `tdd-workflow`.
 
 ## Rollback
 
@@ -249,7 +248,7 @@ Stages are independent. Per-stage rollback:
 - Stage 2: delete `groups/dm-with-jihoon/CLAUDE.local.md`, or restore from backup.
 - Stage 3a: delete the `hooks` field from `.claude-shared/settings.json`, keep `env`.
 - Stage 3b: empty the `packages.npm` array; the next spawn falls back to the base image.
-- Stage 4: `rm -rf container/skills/{tdd-workflow,security-review,browse,qa}`.
+- Stage 4: `rm -rf container/skills/{tdd-workflow,security-review}`.
 - Full reset: `pnpm exec tsx scripts/personalize.ts --reset`.
 
 ## Migration plan for the next upstream update
@@ -291,7 +290,7 @@ The harness adds **zero source-code edits**, so the additional cost over a vanil
 2. Stage 2 (CLAUDE.local.md)                  → restart container, verify behavior → commit
 3. Stage 3a (container hooks settings.json)   → trigger via Telegram, verify hook output → commit
 4. Stage 3b (container.json packages.npm)     → spawn container, verify per-group image build
-5. Stage 4 (4 skill directories)              → verify symlinks, ls /home/node/.claude/skills → commit
+5. Stage 4 (2 skill directories)              → verify symlinks, ls /home/node/.claude/skills → commit
 6. Stage 5 (scripts/personalize.ts)           → dry-run --reset on a scratch group → commit
 7. This design doc                            → committed (c4ba0df)
 ```
@@ -300,6 +299,6 @@ Each stage committed separately; failure in one rolls back without touching the 
 
 ## Open questions / future work
 
-- The `browse` and `qa` skills assume Playwright is available inside the container. The `agent-browser` shared skill suggests it is, but to be confirmed during Stage 4 verification. If not, add `playwright` to `container.json` `packages.npm`.
+- Browser-based QA inside the container relies on the existing `agent-browser` skill. If a richer command-driven browser (the `browse` skill on the host) is wanted later, it needs a container-native rewrite — that's out of scope here.
 - `CLAUDE.local.md` references "sub-agents" by behavior, not by name — Claude Code subagents inside the v2 container are governed by `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`, distinct from the host-side `~/.claude/agents/` directory. If we later want named sub-agents, that's a separate follow-up.
 - A second agent group on a different channel (WhatsApp, Slack) would need its own `personalize.ts --folder <name>` invocation. The script supports it; not exercised in v1 of this design.
