@@ -1,0 +1,43 @@
+{
+  "PreToolUse": [
+    {
+      "matcher": "tool == \"Write\" && tool_input.file_path matches \"^(?!.*\\\\.claude/).*\\\\.(md|txt)$\"",
+      "hooks": [{
+        "type": "command",
+        "command": "input=$(cat); fp=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"'); case \"$fp\" in *README.md|*CHANGELOG.md|*CLAUDE*.md|*/docs/*) echo \"$input\";; *) echo '[Hook] Avoid creating standalone .md files unless requested. Use existing files or memory.' >&2; exit 1;; esac"
+      }]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "(tool == \"Edit\" || tool == \"Write\") && tool_input.file_path matches \".*\\\\.(ts|tsx|js|jsx)$\"",
+      "hooks": [{
+        "type": "command",
+        "command": "input=$(cat); fp=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"'); if [ -f \"$fp\" ]; then npx --yes prettier@3 --write \"$fp\" 2>/dev/null && echo \"[prettier] $fp\" >&2; fi"
+      }]
+    },
+    {
+      "matcher": "(tool == \"Edit\" || tool == \"Write\") && tool_input.file_path matches \".*\\\\.(ts|tsx)$\"",
+      "hooks": [{
+        "type": "command",
+        "command": "input=$(cat); fp=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"'); dir=$(dirname \"$fp\"); cd \"$dir\" 2>/dev/null && npx --yes -p typescript@5 tsc --noEmit \"$fp\" 2>&1 | head -5 >&2 || true"
+      }]
+    },
+    {
+      "matcher": "(tool == \"Edit\" || tool == \"Write\") && tool_input.file_path matches \".*\\\\.(ts|tsx|js|jsx)$\"",
+      "hooks": [{
+        "type": "command",
+        "command": "input=$(cat); fp=$(echo \"$input\" | jq -r '.tool_input.file_path // \"\"'); if [ -f \"$fp\" ] && grep -nE 'console\\\\.log\\\\(' \"$fp\" >/dev/null 2>&1; then echo \"[Warning] console.log found in $fp:\" >&2; grep -nE 'console\\\\.log\\\\(' \"$fp\" | head -3 >&2; fi"
+      }]
+    }
+  ],
+  "Stop": [
+    {
+      "matcher": "true",
+      "hooks": [{
+        "type": "command",
+        "command": "if [ -d /workspace/agent ]; then found=$(grep -rEl --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' 'console\\\\.log\\\\(' /workspace/agent 2>/dev/null | head -3); [ -n \"$found\" ] && echo \"[Stop hook] Files with console.log: $found\" >&2 || true; fi"
+      }]
+    }
+  ]
+}
